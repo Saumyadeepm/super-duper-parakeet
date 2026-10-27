@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Futures EMA Scanner | Real-Time Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            950: '#070a13',
+                            900: '#0c1322',
+                            800: '#141e33',
+                            700: '#1e2c4a',
+                            600: '#2d3f66',
+                        },
+                        brand: {
+                            emerald: '#10b981',
+                            cyan: '#06b6d4',
+                            amber: '#f59e0b',
+                            violet: '#8b5cf6',
+                            rose: '#f43f5e',
+                            binance: '#F3BA2F'
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['JetBrains Mono', 'Fira Code', 'Courier New', 'monospace'],
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            background-color: #070a13;
+            color: #f1f5f9;
+            font-family: 'Inter', sans-serif;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .glow-emerald {
+            box-shadow: 0 0 20px -3px rgba(16, 185, 129, 0.35);
+        }
+        .glow-cyan {
+            box-shadow: 0 0 20px -3px rgba(6, 182, 212, 0.3);
+        }
+        .glow-binance {
+            box-shadow: 0 0 20px -3px rgba(243, 186, 47, 0.3);
+        }
+        .pulse-ring {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.15); opacity: 0.3; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        @keyframes flash-green {
+            0% { background-color: rgba(16, 185, 129, 0.35); }
+            100% { background-color: transparent; }
+        }
+        .flash-update {
+            animation: flash-green 1.5s ease-out;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0c1322;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e2c4a;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #2d3f66;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-dark-950 text-slate-100 selection:bg-brand-emerald selection:text-dark-950">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-slate-800/80 bg-dark-900/90 backdrop-blur-md sticky top-0 z-40 px-4 lg:px-8 py-3.5">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            
+            <!-- Logo & Strategy Definition -->
+            <div class="flex items-center gap-3.5 w-full md:w-auto">
+                <div class="relative flex items-center justify-center w-10 h-10 rounded-xl bg-dark-800 border border-brand-binance/40 text-brand-binance shadow-lg glow-binance">
+                    <i class="fa-brands fa-bitcoin text-xl"></i>
+                    <span id="scannerPulse" class="absolute -top-1 -right-1 w-3 h-3 bg-brand-emerald rounded-full pulse-ring"></span>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                            Binance Futures Scanner
+                            <span class="text-xs px-2 py-0.5 rounded-full font-semibold bg-brand-binance/10 text-brand-binance border border-brand-binance/30">
+                                4H/1D EMA(99)
+                            </span>
+                        </h1>
+                    </div>
+                    <p class="text-xs text-slate-400">
+                        Formula: <span class="mono text-brand-cyan">Price &lt; 1D EMA(99)</span> &nbsp;&amp;&nbsp; <span class="mono text-brand-emerald">Price &gt; 4H EMA(99)</span> &nbsp;&amp;&nbsp; <span class="mono text-slate-300">Price &lt; $1.00</span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Cycle Status & Controls -->
+            <div class="flex items-center flex-wrap gap-2.5 sm:gap-3 w-full md:w-auto justify-end">
+                
+                <!-- Countdown Pill -->
+                <div id="countdownPill" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-dark-800/90 border border-slate-700/80 text-xs font-medium text-slate-300 shadow-inner">
+                    <div class="relative flex items-center justify-center w-5 h-5">
+                        <svg class="w-5 h-5 transform -rotate-90">
+                            <circle cx="10" cy="10" r="8" stroke="#1e2c4a" stroke-width="2.5" fill="none"></circle>
+                            <circle id="countdownCircle" cx="10" cy="10" r="8" stroke="#10b981" stroke-width="2.5" stroke-dasharray="50.26" stroke-dashoffset="0" stroke-linecap="round" fill="none" class="transition-all duration-1000 ease-linear"></circle>
+                        </svg>
+                    </div>
+                    <span>Cycle: <strong id="countdownText" class="mono text-white font-semibold">15s</strong></span>
+                </div>
+
+                <!-- Live Status Badge -->
+                <div id="statusBadge" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span id="statusText">LIVE</span>
+                </div>
+
+                <!-- Scan Now Button -->
+                <button id="btnScanNow" onclick="triggerScanNow()" class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-brand-emerald hover:bg-emerald-400 text-dark-950 transition-all duration-150 shadow-md glow-emerald active:scale-95">
+                    <i id="scanIcon" class="fa-solid fa-bolt"></i>
+                    <span>Scan Now</span>
+                </button>
+
+                <!-- Pause/Resume Button -->
+                <button id="btnPause" onclick="togglePause()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-dark-800 hover:bg-dark-700 border border-slate-700 text-slate-300 transition-all active:scale-95">
+                    <i id="pauseIcon" class="fa-solid fa-pause"></i>
+                    <span id="pauseText">Pause</span>
+                </button>
+
+                <!-- Audio Toggle Button -->
+                <button id="btnAudio" onclick="toggleAudio()" class="flex items-center justify-center w-8 h-8 rounded-lg bg-dark-800 hover:bg-dark-700 border border-slate-700 text-slate-400 hover:text-white transition-all" title="Toggle audio chime on new matches">
+                    <i id="audioIcon" class="fa-solid fa-volume-xmark"></i>
+                </button>
+
+                <!-- Settings Button -->
+                <button onclick="openSettingsModal()" class="flex items-center justify-center w-8 h-8 rounded-lg bg-dark-800 hover:bg-dark-700 border border-slate-700 text-slate-400 hover:text-white transition-all" title="Configure Scanner Parameters">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
+
+        <!-- Top Stat Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            
+            <!-- Card 1: Matches -->
+            <div class="bg-dark-900/80 border border-slate-800 rounded-2xl p-4 relative overflow-hidden backdrop-blur-sm group hover:border-brand-emerald/50 transition-colors">
+                <div class="absolute -right-4 -bottom-4 w-20 h-20 bg-brand-emerald/10 rounded-full blur-xl pointer-events-none"></div>
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold tracking-wider uppercase text-slate-400">Matching Setups</span>
+                    <span class="w-7 h-7 rounded-lg bg-brand-emerald/10 text-brand-emerald flex items-center justify-center text-xs">
+                        <i class="fa-solid fa-crosshairs"></i>
+                    </span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                    <span id="statMatchesCount" class="text-3xl font-extrabold mono text-white">0</span>
+                    <span class="text-xs text-brand-emerald font-semibold">Coins Found</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-1">Passing all EMA &amp; Volume rules</p>
+            </div>
+
+            <!-- Card 2: Candidates -->
+            <div class="bg-dark-900/80 border border-slate-800 rounded-2xl p-4 relative overflow-hidden backdrop-blur-sm group hover:border-brand-cyan/50 transition-colors">
+                <div class="absolute -right-4 -bottom-4 w-20 h-20 bg-brand-cyan/10 rounded-full blur-xl pointer-events-none"></div>
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold tracking-wider uppercase text-slate-400">Candidates Scanned</span>
+                    <span class="w-7 h-7 rounded-lg bg-brand-cyan/10 text-brand-cyan flex items-center justify-center text-xs">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                    <span id="statCandidatesCount" class="text-3xl font-extrabold mono text-white">0</span>
+                    <span class="text-xs text-slate-400">High-Vol Pairs</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-1">Active USDT futures &gt;= $5M Vol</p>
+            </div>
+
+            <!-- Card 3: Top Volume Match -->
+            <div class="bg-dark-900/80 border border-slate-800 rounded-2xl p-4 relative overflow-hidden backdrop-blur-sm group hover:border-brand-binance/50 transition-colors">
+                <div class="absolute -right-4 -bottom-4 w-20 h-20 bg-brand-binance/10 rounded-full blur-xl pointer-events-none"></div>
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold tracking-wider uppercase text-slate-400">Top Volume Match</span>
+                    <span class="w-7 h-7 rounded-lg bg-brand-binance/10 text-brand-binance flex items-center justify-center text-xs">
+                        <i class="fa-solid fa-chart-line"></i>
+                    </span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                    <span id="statTopSymbol" class="text-xl font-bold mono text-brand-binance truncate">--</span>
+                    <span id="statTopVol" class="text-xs text-slate-300 mono">$0M</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-1">Leading 24h liquidity contract</p>
+            </div>
+
+            <!-- Card 4: Last Scan Time & Duration -->
+            <div class="bg-dark-900/80 border border-slate-800 rounded-2xl p-4 relative overflow-hidden backdrop-blur-sm group hover:border-brand-violet/50 transition-colors">
+                <div class="absolute -right-4 -bottom-4 w-20 h-20 bg-brand-violet/10 rounded-full blur-xl pointer-events-none"></div>
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold tracking-wider uppercase text-slate-400">Scan Latency</span>
+                    <span class="w-7 h-7 rounded-lg bg-brand-violet/10 text-brand-violet flex items-center justify-center text-xs">
+                        <i class="fa-solid fa-stopwatch"></i>
+                    </span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                    <span id="statScanDuration" class="text-3xl font-extrabold mono text-white">--</span>
+                    <span class="text-xs text-slate-400">seconds</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-1 truncate" id="statLastScanTime">Waiting for first scan...</p>
+            </div>
+
+        </div>
+
+        <!-- Strategy Blueprint & TradingView Action Bar -->
+        <div class="bg-dark-900/90 border border-slate-800 rounded-2xl p-4 backdrop-blur-md flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shadow-xl">
+            
+            <!-- Left: Filter Summary Chips -->
+            <div class="flex flex-wrap items-center gap-2">
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mr-1">
+                    <i class="fa-solid fa-filter text-brand-cyan"></i> Active Rules:
+                </div>
+                <span class="px-2.5 py-1 rounded-lg text-xs font-medium bg-dark-800 border border-slate-700 text-slate-300">
+                    <strong class="text-white">Vol:</strong> &ge; <span id="chipMinVol">$5M</span>
+                </span>
+                <span class="px-2.5 py-1 rounded-lg text-xs font-medium bg-dark-800 border border-slate-700 text-slate-300">
+                    <strong class="text-white">Price:</strong> &lt; <span id="chipMaxPrice">$1.00</span>
+                </span>
+                <span class="px-2.5 py-1 rounded-lg text-xs font-medium bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan">
+                    <strong>1D:</strong> Price &lt; EMA(<span class="chipEmaSpan">99</span>)
+                </span>
+                <span class="px-2.5 py-1 rounded-lg text-xs font-medium bg-brand-emerald/10 border border-brand-emerald/30 text-brand-emerald">
+                    <strong>4H:</strong> Price &gt; EMA(<span class="chipEmaSpan">99</span>)
+                </span>
+                <span class="px-2.5 py-1 rounded-lg text-xs font-medium bg-brand-violet/10 border border-brand-violet/30 text-brand-violet">
+                    <strong>ATL:</strong> Auto-Tracked
+                </span>
+            </div>
+
+            <!-- Right: TradingView Watchlist One-Click Copy -->
+            <div class="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+                <button onclick="copyTradingViewList()" class="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-indigo-600/20 active:scale-95 transition-all">
+                    <i class="fa-solid fa-copy"></i>
+                    <span>Copy for TradingView</span>
+                </button>
+                <button onclick="copyCleanList()" class="w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-dark-800 hover:bg-dark-700 border border-slate-700 text-slate-300 active:scale-95 transition-all">
+                    <i class="fa-solid fa-list-check"></i>
+                    <span>Clean Symbols</span>
+                </button>
+                <button onclick="exportCSV()" class="flex items-center justify-center px-3 py-2 rounded-xl text-xs font-medium bg-dark-800 hover:bg-dark-700 border border-slate-700 text-slate-400 hover:text-white active:scale-95 transition-all" title="Export CSV">
+                    <i class="fa-solid fa-download"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Filter / Search & Table Card -->
+        <div class="bg-dark-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-md">
+            
+            <!-- Table Header Bar -->
+            <div class="px-5 py-4 border-b border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <h2 class="text-base font-bold text-white flex items-center gap-2">
+                        <span>Discovered Opportunities</span>
+                        <span id="tableBadgeCount" class="text-xs px-2 py-0.5 rounded-full bg-brand-emerald/15 text-brand-emerald font-semibold border border-brand-emerald/30">
+                            0 Pairs
+                        </span>
+                    </h2>
+                </div>
+
+                <!-- Search & Sort Controls -->
+                <div class="flex items-center gap-3 w-full sm:w-auto">
+                    <!-- Search Input -->
+                    <div class="relative w-full sm:w-56">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
+                        <input id="searchInput" type="text" placeholder="Search symbol..." oninput="renderTable()"
+                            class="w-full bg-dark-800 border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-emerald transition-colors">
+                    </div>
+
+                    <!-- Sort Select -->
+                    <select id="sortSelect" onchange="renderTable()"
+                        class="bg-dark-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-brand-emerald transition-colors">
+                        <option value="vol_desc">Volume: High to Low</option>
+                        <option value="price_asc">Price: Low to High</option>
+                        <option value="dist_4h_desc">4H EMA Breakout: Max</option>
+                        <option value="dist_1d_asc">Room to 1D EMA: Max</option>
+                        <option value="dist_atl_asc">Closest to ATL</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Table Container -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead>
+                        <tr class="bg-dark-950/70 border-b border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                            <th class="py-3.5 px-4 w-12 text-center">#</th>
+                            <th class="py-3.5 px-4">Contract / Symbol</th>
+                            <th class="py-3.5 px-4 text-right">Price (USDT)</th>
+                            <th class="py-3.5 px-4 text-right">All-Time Low (ATL)</th>
+                            <th class="py-3.5 px-4 text-right">4H EMA(99)</th>
+                            <th class="py-3.5 px-4 text-right">1D EMA(99)</th>
+                            <th class="py-3.5 px-6 text-center w-52">Range (4H Floor &rarr; 1D Ceiling)</th>
+                            <th class="py-3.5 px-4 text-right">24h Volume</th>
+                            <th class="py-3.5 px-4 text-center w-24">Trade / Chart</th>
+                        </tr>
+                    </thead>
+                    <tbody id="matchesTableBody" class="divide-y divide-slate-800/70">
+                        <!-- Dynamic rows injected here -->
+                    </tbody>
+                </table>
+
+                <!-- Empty State -->
+                <div id="emptyState" class="hidden py-16 flex flex-col items-center justify-center text-center px-4">
+                    <div class="w-16 h-16 rounded-2xl bg-dark-800 border border-slate-700 flex items-center justify-center text-slate-500 text-2xl mb-3 shadow-inner">
+                        <i class="fa-solid fa-radar fa-spin text-brand-cyan"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-300">Scanning Binance Futures...</h3>
+                    <p class="text-xs text-slate-500 max-w-sm mt-1">
+                        No pairs currently meet all 3 filters (Price &lt; $1, Price &lt; 1D EMA99, Price &gt; 4H EMA99). The scanner is running in the background every 15 seconds.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Table Footer -->
+            <div class="px-5 py-3 border-t border-slate-800/80 bg-dark-950/40 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500">
+                <span id="footerInfo">Showing matches</span>
+                <span class="flex items-center gap-1.5">
+                    <span class="w-1.5 h-1.5 rounded-full bg-brand-emerald"></span>
+                    Auto-updates via WebSocket every 15 seconds
+                </span>
+            </div>
+        </div>
+
+        <!-- Terminal Logs Section -->
+        <div class="bg-dark-900/90 border border-slate-800 rounded-2xl p-4 backdrop-blur-md shadow-xl">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-terminal text-brand-emerald text-xs"></i>
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Live Scanner Activity Log</h3>
+                </div>
+                <button onclick="clearLogs()" class="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+                    Clear Logs
+                </button>
+            </div>
+            <div id="logsTerminal" class="mono text-[11px] bg-dark-950 p-3.5 rounded-xl border border-slate-800/80 h-32 overflow-y-auto space-y-1 text-slate-400">
+                <div class="text-slate-500">// Connecting to Binance Futures Scanner daemon...</div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-dark-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-brand-cyan"></i>
+                    Scanner Parameters
+                </h3>
+                <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-white text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="settingsForm" onsubmit="saveSettings(event)" class="space-y-4 mt-4 text-xs">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Minimum 24h Volume (USDT)</label>
+                    <input id="inputMinVol" type="number" step="500000" min="100000"
+                        class="w-full bg-dark-800 border border-slate-700 rounded-xl px-3 py-2 text-white mono focus:outline-none focus:border-brand-emerald">
+                    <p class="text-[11px] text-slate-500 mt-1">Default: 5,000,000 USDT ($5M)</p>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Maximum Price Ceiling (USDT)</label>
+                    <input id="inputMaxPrice" type="number" step="0.01" min="0.001"
+                        class="w-full bg-dark-800 border border-slate-700 rounded-xl px-3 py-2 text-white mono focus:outline-none focus:border-brand-emerald">
+                    <p class="text-[11px] text-slate-500 mt-1">Default: 1.00 USDT (focus on sub-dollar / micro-caps)</p>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">EMA Span Period</label>
+                    <input id="inputEmaSpan" type="number" min="10" max="300"
+                        class="w-full bg-dark-800 border border-slate-700 rounded-xl px-3 py-2 text-white mono focus:outline-none focus:border-brand-emerald">
+                    <p class="text-[11px] text-slate-500 mt-1">Applied to both 1D and 4H timeframes (Default: 99)</p>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Scan Interval (Seconds)</label>
+                    <div class="flex items-center gap-3">
+                        <input id="inputInterval" type="range" min="10" max="60" step="5" oninput="document.getElementById('intervalDisplay').innerText = this.value + 's'"
+                            class="flex-1 accent-emerald-500 cursor-pointer">
+                        <span id="intervalDisplay" class="mono font-bold text-white px-2 py-1 bg-dark-800 rounded-lg border border-slate-700">15s</span>
+                    </div>
+                </div>
+
+                <div class="pt-2">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input id="inputClosedCandle" type="checkbox" class="rounded accent-emerald-500">
+                        <span class="text-slate-300 font-medium">Use Closed Candle Only (-2 instead of -1 live)</span>
+                    </label>
+                    <p class="text-[11px] text-slate-500 mt-0.5 pl-6">When checked, uses the completed candle instead of the currently forming candle.</p>
+                </div>
+
+                <div class="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-800">
+                    <button type="button" onclick="closeSettingsModal()" class="px-4 py-2 rounded-xl bg-dark-800 hover:bg-dark-700 text-slate-300 font-medium transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-4 py-2 rounded-xl bg-brand-emerald hover:bg-emerald-400 text-dark-950 font-semibold transition-colors shadow-md glow-emerald">
+                        Apply &amp; Scan
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="bg-dark-800 border border-brand-emerald/40 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-brand-emerald text-base"></i>
+            <span id="toastMsg" class="text-xs font-semibold">Watchlist copied!</span>
+        </div>
+    </div>
+
+    <!-- App JavaScript Logic -->
+    <script>
+        let scannerState = {
+            status: "running",
+            is_scanning: false,
+            paused: false,
+            countdown: 15,
+            last_scan_time: null,
+            last_scan_duration: 0,
+            total_candidates: 0,
+            matches_count: 0,
+            matches: [],
+            tv_watchlist: "",
+            clean_symbols: "",
+            config: {
+                min_volume: 5000000,
+                max_price: 1.0,
+                ema_span: 99,
+                use_closed_candle: false,
+                interval_seconds: 15
+            },
+            logs: []
+        };
+
+        let ws = null;
+        let audioEnabled = false;
+        let lastKnownMatches = new Set();
+        let maxCountdown = 15;
+
+        // Initialize Audio Synthesizer for notifications
+        function playChime() {
+            if (!audioEnabled) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const now = ctx.currentTime;
+                
+                // Tone 1
+                const osc1 = ctx.createOscillator();
+                const gain1 = ctx.createGain();
+                osc1.type = "sine";
+                osc1.frequency.setValueAtTime(587.33, now); // D5
+                gain1.gain.setValueAtTime(0.15, now);
+                gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                osc1.connect(gain1);
+                gain1.connect(ctx.destination);
+                osc1.start(now);
+                osc1.stop(now + 0.3);
+
+                // Tone 2
+                const osc2 = ctx.createOscillator();
+                const gain2 = ctx.createGain();
+                osc2.type = "sine";
+                osc2.frequency.setValueAtTime(880.00, now + 0.1); // A5
+                gain2.gain.setValueAtTime(0.18, now + 0.1);
+                gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+                osc2.connect(gain2);
+                gain2.connect(ctx.destination);
+                osc2.start(now + 0.1);
+                osc2.stop(now + 0.5);
+            } catch (e) {
+                console.error("Audio playback error:", e);
+            }
+        }
+
+        function toggleAudio() {
+            audioEnabled = !audioEnabled;
+            const btn = document.getElementById("btnAudio");
+            const icon = document.getElementById("audioIcon");
+            if (audioEnabled) {
+                btn.classList.add("text-brand-emerald", "border-brand-emerald/40");
+                icon.className = "fa-solid fa-volume-high";
+                showToast("Audio Chime enabled for new match alerts!", "fa-solid fa-volume-high");
+                playChime();
+            } else {
+                btn.classList.remove("text-brand-emerald", "border-brand-emerald/40");
+                icon.className = "fa-solid fa-volume-xmark";
+                showToast("Audio Chime muted");
+            }
+        }
+
+        // Connect WebSocket with auto-reconnection
+        function initWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                updateConnectionStatus("LIVE", "emerald");
+                appendLog("[WS] Connected to real-time scanner daemon.");
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    handleServerEvent(message);
+                } catch (e) {
+                    console.error("Error parsing WS message:", e);
+                }
+            };
+
+            ws.onclose = () => {
+                updateConnectionStatus("RECONNECTING", "amber");
+                appendLog("[WS] Connection lost. Reconnecting in 3s...", "warn");
+                setTimeout(initWebSocket, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("WebSocket error:", err);
+                ws.close();
+            };
+        }
+
+        function handleServerEvent(msg) {
+            const ev = msg.event;
+            const data = msg.data;
+
+            if (ev === "init" || ev === "scan_completed" || ev === "config_updated") {
+                if (data) {
+                    const prevCount = scannerState.matches_count;
+                    scannerState = { ...scannerState, ...data };
+                    maxCountdown = scannerState.config.interval_seconds || 15;
+                    updateUI();
+
+                    // Check for new matches and alert
+                    if (data.matches && data.matches.length > 0) {
+                        const currentSymbols = new Set(data.matches.map(m => m.clean_symbol));
+                        let hasNew = false;
+                        for (let s of currentSymbols) {
+                            if (!lastKnownMatches.has(s)) {
+                                hasNew = true;
+                                break;
+                            }
+                        }
+                        if (hasNew && lastKnownMatches.size > 0) {
+                            playChime();
+                            showToast(`New breakout signal detected! (${data.matches.length} matching)`, "fa-solid fa-bolt");
+                        }
+                        lastKnownMatches = currentSymbols;
+                    }
+                }
+            } else if (ev === "tick") {
+                if (data && typeof data.countdown !== "undefined") {
+                    scannerState.countdown = data.countdown;
+                    updateCountdownDisplay(data.countdown);
+                }
+            } else if (ev === "scan_started") {
+                scannerState.is_scanning = true;
+                updateScannerActiveState(true);
+            }
+        }
+
+        function updateScannerActiveState(isScanning) {
+            const btn = document.getElementById("btnScanNow");
+            const icon = document.getElementById("scanIcon");
+            const pulse = document.getElementById("scannerPulse");
+
+            if (isScanning) {
+                icon.className = "fa-solid fa-circle-notch fa-spin";
+                btn.classList.add("opacity-80", "pointer-events-none");
+                updateConnectionStatus("SCANNING", "cyan");
+                pulse.className = "absolute -top-1 -right-1 w-3 h-3 bg-brand-cyan rounded-full animate-ping";
+            } else {
+                icon.className = "fa-solid fa-bolt";
+                btn.classList.remove("opacity-80", "pointer-events-none");
+                if (!scannerState.paused) {
+                    updateConnectionStatus("LIVE", "emerald");
+                    pulse.className = "absolute -top-1 -right-1 w-3 h-3 bg-brand-emerald rounded-full pulse-ring";
+                }
+            }
+        }
+
+        function updateConnectionStatus(text, color) {
+            const badge = document.getElementById("statusBadge");
+            const statusText = document.getElementById("statusText");
+
+            statusText.innerText = text;
+            badge.className = `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                color === 'emerald' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' :
+                color === 'cyan' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30' :
+                color === 'amber' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' :
+                'bg-rose-500/10 text-rose-400 border border-rose-500/30'
+            }`;
+        }
+
+        function updateCountdownDisplay(seconds) {
+            document.getElementById("countdownText").innerText = seconds + "s";
+            
+            // Update SVG circle stroke
+            const circle = document.getElementById("countdownCircle");
+            const circumference = 50.26; // 2 * PI * 8
+            const fraction = Math.max(0, Math.min(1, seconds / maxCountdown));
+            const offset = circumference * (1 - fraction);
+            circle.style.strokeDashoffset = offset;
+            
+            if (seconds <= 3) {
+                circle.setAttribute("stroke", "#06b6d4"); // cyan pulse near zero
+            } else {
+                circle.setAttribute("stroke", "#10b981");
+            }
+        }
+
+        function updateUI() {
+            // Update header status
+            updateScannerActiveState(scannerState.is_scanning);
+            if (scannerState.paused) {
+                updateConnectionStatus("PAUSED", "amber");
+                document.getElementById("pauseIcon").className = "fa-solid fa-play text-brand-emerald";
+                document.getElementById("pauseText").innerText = "Resume";
+            } else {
+                document.getElementById("pauseIcon").className = "fa-solid fa-pause";
+                document.getElementById("pauseText").innerText = "Pause";
+            }
+
+            // Stat Cards
+            document.getElementById("statMatchesCount").innerText = scannerState.matches_count;
+            document.getElementById("statCandidatesCount").innerText = scannerState.total_candidates;
+            
+            if (scannerState.matches && scannerState.matches.length > 0) {
+                const top = scannerState.matches[0];
+                document.getElementById("statTopSymbol").innerText = top.clean_symbol;
+                document.getElementById("statTopVol").innerText = `$${top.volume_m}M`;
+            } else {
+                document.getElementById("statTopSymbol").innerText = "--";
+                document.getElementById("statTopVol").innerText = "$0M";
+            }
+
+            document.getElementById("statScanDuration").innerText = scannerState.last_scan_duration > 0 ? scannerState.last_scan_duration : "--";
+            document.getElementById("statLastScanTime").innerText = scannerState.last_scan_time ? `Last scan: ${scannerState.last_scan_time}` : "Waiting for first scan...";
+
+            // Strategy Chips
+            if (scannerState.config) {
+                document.getElementById("chipMinVol").innerText = `$${(scannerState.config.min_volume / 1e6).toFixed(1)}M`;
+                document.getElementById("chipMaxPrice").innerText = `$${scannerState.config.max_price.toFixed(2)}`;
+                document.querySelectorAll(".chipEmaSpan").forEach(el => el.innerText = scannerState.config.ema_span);
+            }
+
+            // Update Logs
+            if (scannerState.logs && scannerState.logs.length > 0) {
+                renderLogs(scannerState.logs);
+            }
+
+            // Render Table
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById("matchesTableBody");
+            const empty = document.getElementById("emptyState");
+            const searchVal = document.getElementById("searchInput").value.trim().toUpperCase();
+            const sortBy = document.getElementById("sortSelect").value;
+
+            let matches = [...(scannerState.matches || [])];
+
+            // Filter
+            if (searchVal) {
+                matches = matches.filter(m => m.symbol.toUpperCase().includes(searchVal) || m.clean_symbol.toUpperCase().includes(searchVal));
+            }
+
+            // Sort
+            matches.sort((a, b) => {
+                if (sortBy === "vol_desc") return b.volume_24h - a.volume_24h;
+                if (sortBy === "price_asc") return a.price - b.price;
+                if (sortBy === "dist_4h_desc") return b.dist_ema_4h_pct - a.dist_ema_4h_pct;
+                if (sortBy === "dist_1d_asc") return a.dist_ema_1d_pct - b.dist_ema_1d_pct;
+                if (sortBy === "dist_atl_asc") return a.dist_atl_pct - b.dist_atl_pct;
+                return 0;
+            });
+
+            document.getElementById("tableBadgeCount").innerText = `${matches.length} Pairs`;
+            document.getElementById("footerInfo").innerText = `Showing ${matches.length} matching perpetual futures contracts`;
+
+            if (matches.length === 0) {
+                tbody.innerHTML = "";
+                empty.classList.remove("hidden");
+                return;
+            }
+
+            empty.classList.add("hidden");
+
+            // Format decimal prices nicely
+            const formatPrice = (p) => {
+                if (p === undefined || p === null) return "--";
+                if (p < 0.0001) return p.toFixed(8);
+                if (p < 0.01) return p.toFixed(6);
+                if (p < 1) return p.toFixed(4);
+                return p.toFixed(2);
+            };
+
+            const maxVol = Math.max(...matches.map(m => m.volume_24h), 1);
+
+            tbody.innerHTML = matches.map((m, idx) => {
+                const volPct = Math.round((m.volume_24h / maxVol) * 100);
+                const tvUrl = `https://www.tradingview.com/chart/?symbol=BINANCE:${m.clean_symbol}.P`;
+                const binanceUrl = `https://www.binance.com/en/futures/${m.clean_symbol}`;
+
+                return `
+                <tr class="hover:bg-dark-800/60 transition-colors group">
+                    <!-- Rank -->
+                    <td class="py-3 px-4 text-center mono font-semibold text-slate-500 text-xs">
+                        #${idx + 1}
+                    </td>
+
+                    <!-- Symbol -->
+                    <td class="py-3 px-4">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-dark-800 border border-slate-700/80 flex items-center justify-center font-bold text-xs text-brand-binance group-hover:border-brand-binance/50 transition-colors">
+                                ${m.base_asset.substring(0, 3)}
+                            </div>
+                            <div>
+                                <div class="font-bold text-white tracking-wide text-xs flex items-center gap-1.5">
+                                    ${m.clean_symbol}
+                                    <span class="text-[9px] px-1 py-0.2 rounded font-mono bg-dark-800 text-slate-400 border border-slate-700">PERP</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                    <a href="${tvUrl}" target="_blank" class="hover:text-blue-400 transition-colors flex items-center gap-0.5">
+                                        <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i> TV
+                                    </a>
+                                    <span>&bull;</span>
+                                    <a href="${binanceUrl}" target="_blank" class="hover:text-brand-binance transition-colors flex items-center gap-0.5">
+                                        <i class="fa-brands fa-bitcoin text-[9px]"></i> Binance
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+
+                    <!-- Price -->
+                    <td class="py-3 px-4 text-right mono font-bold text-white text-xs">
+                        $${formatPrice(m.price)}
+                    </td>
+
+                    <!-- ATL (All Time Low) -->
+                    <td class="py-3 px-4 text-right mono">
+                        <div class="font-medium text-slate-300 text-xs">$${formatPrice(m.atl)}</div>
+                        <div class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-dark-800 text-slate-400 border border-slate-700 mt-0.5">
+                            +${m.dist_atl_pct}% from ATL
+                        </div>
+                    </td>
+
+                    <!-- 4H EMA(99) -->
+                    <td class="py-3 px-4 text-right mono">
+                        <div class="font-medium text-slate-300 text-xs">$${formatPrice(m.ema_4h)}</div>
+                        <div class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-emerald/10 text-brand-emerald border border-brand-emerald/30 mt-0.5">
+                            <i class="fa-solid fa-arrow-trend-up text-[8px]"></i> +${m.dist_ema_4h_pct}%
+                        </div>
+                    </td>
+
+                    <!-- 1D EMA(99) -->
+                    <td class="py-3 px-4 text-right mono">
+                        <div class="font-medium text-slate-300 text-xs">$${formatPrice(m.ema_1d)}</div>
+                        <div class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-cyan/10 text-brand-cyan border border-brand-cyan/30 mt-0.5">
+                            <i class="fa-solid fa-arrow-trend-down text-[8px]"></i> ${m.dist_ema_1d_pct}%
+                        </div>
+                    </td>
+
+                    <!-- Spread Visualizer (Floor -> Ceiling) -->
+                    <td class="py-3 px-6">
+                        <div class="w-full">
+                            <div class="flex justify-between text-[10px] mono text-slate-400 mb-1">
+                                <span class="text-brand-emerald">4H Floor</span>
+                                <span class="font-bold text-white">${m.range_position_pct}%</span>
+                                <span class="text-brand-cyan">1D Ceiling</span>
+                            </div>
+                            <div class="w-full h-1.5 bg-dark-800 rounded-full overflow-hidden border border-slate-700 relative">
+                                <div class="h-full bg-gradient-to-r from-brand-emerald to-brand-cyan rounded-full transition-all duration-500" style="width: ${m.range_position_pct}%"></div>
+                            </div>
+                        </div>
+                    </td>
+
+                    <!-- 24h Volume -->
+                    <td class="py-3 px-4 text-right mono">
+                        <div class="font-bold text-white text-xs">$${m.volume_m}M</div>
+                        <div class="w-16 h-1 bg-dark-800 rounded-full ml-auto mt-1 overflow-hidden">
+                            <div class="h-full bg-brand-binance rounded-full" style="width: ${volPct}%"></div>
+                        </div>
+                    </td>
+
+                    <!-- Action / Chart -->
+                    <td class="py-3 px-4 text-center">
+                        <a href="${tvUrl}" target="_blank"
+                            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-dark-800 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 hover:border-indigo-500 transition-all active:scale-95">
+                            <i class="fa-solid fa-chart-simple"></i>
+                            <span>Chart</span>
+                        </a>
+                    </td>
+                </tr>
+                `;
+            }).join("");
+        }
+
+        function renderLogs(logs) {
+            const terminal = document.getElementById("logsTerminal");
+            terminal.innerHTML = logs.map(l => {
+                const color = l.level === 'error' ? 'text-rose-400' : (l.level === 'warn' ? 'text-amber-400' : 'text-slate-300');
+                return `<div><span class="text-slate-600">[${l.time}]</span> <span class="${color}">${l.message}</span></div>`;
+            }).join("");
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function appendLog(message, level = "info") {
+            const terminal = document.getElementById("logsTerminal");
+            const time = new Date().toTimeString().split(' ')[0];
+            const color = level === 'error' ? 'text-rose-400' : (level === 'warn' ? 'text-amber-400' : 'text-slate-300');
+            const row = document.createElement("div");
+            row.innerHTML = `<span class="text-slate-600">[${time}]</span> <span class="${color}">${message}</span>`;
+            terminal.appendChild(row);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById("logsTerminal").innerHTML = '<div class="text-slate-500">// Logs cleared.</div>';
+        }
+
+        // Action Handlers
+        function triggerScanNow() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: "scan_now" }));
+            } else {
+                fetch("/api/scan", { method: "POST" });
+            }
+            updateScannerActiveState(true);
+            showToast("Manual scan triggered...", "fa-solid fa-bolt");
+        }
+
+        function togglePause() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: "toggle_pause" }));
+            } else {
+                fetch("/api/config", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ paused: !scannerState.paused })
+                });
+            }
+        }
+
+        function copyTradingViewList() {
+            if (!scannerState.matches || scannerState.matches.length === 0) {
+                showToast("No matching symbols to copy", "fa-solid fa-triangle-exclamation");
+                return;
+            }
+            const tvString = scannerState.matches.map(m => `BINANCE:${m.clean_symbol}.P`).join(", ");
+            navigator.clipboard.writeText(tvString).then(() => {
+                showToast(`Copied ${scannerState.matches.length} pairs for TradingView!`, "fa-solid fa-copy");
+            });
+        }
+
+        function copyCleanList() {
+            if (!scannerState.matches || scannerState.matches.length === 0) {
+                showToast("No matching symbols to copy", "fa-solid fa-triangle-exclamation");
+                return;
+            }
+            const cleanString = scannerState.matches.map(m => m.clean_symbol).join(", ");
+            navigator.clipboard.writeText(cleanString).then(() => {
+                showToast(`Copied ${scannerState.matches.length} clean symbols!`, "fa-solid fa-list-check");
+            });
+        }
+
+        function exportCSV() {
+            if (!scannerState.matches || scannerState.matches.length === 0) {
+                showToast("No matching data to export", "fa-solid fa-triangle-exclamation");
+                return;
+            }
+            let csv = "Symbol,Price,ATL,4H_EMA99,1D_EMA99,Volume_24h_USDT,Timestamp\n";
+            scannerState.matches.forEach(m => {
+                csv += `${m.clean_symbol},${m.price},${m.atl},${m.ema_4h},${m.ema_1d},${m.volume_24h},${m.scanned_at}\n`;
+            });
+            const blob = new Blob([csv], { type: "text/csv" });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.setAttribute("href", url);
+            a.setAttribute("download", `binance_scanner_matches_${Date.now()}.csv`);
+            a.click();
+            showToast("CSV exported successfully!");
+        }
+
+        function showToast(msg, iconClass = "fa-solid fa-circle-check") {
+            const toast = document.getElementById("toast");
+            document.getElementById("toastMsg").innerText = msg;
+            document.getElementById("toastIcon").className = `${iconClass} text-brand-emerald text-base`;
+
+            toast.classList.remove("translate-y-20", "opacity-0", "pointer-events-none");
+            setTimeout(() => {
+                toast.classList.add("translate-y-20", "opacity-0", "pointer-events-none");
+            }, 3000);
+        }
+
+        // Settings Modal Handlers
+        function openSettingsModal() {
+            const cfg = scannerState.config || {};
+            document.getElementById("inputMinVol").value = cfg.min_volume || 5000000;
+            document.getElementById("inputMaxPrice").value = cfg.max_price || 1.0;
+            document.getElementById("inputEmaSpan").value = cfg.ema_span || 99;
+            document.getElementById("inputInterval").value = cfg.interval_seconds || 15;
+            document.getElementById("intervalDisplay").innerText = (cfg.interval_seconds || 15) + "s";
+            document.getElementById("inputClosedCandle").checked = !!cfg.use_closed_candle;
+            document.getElementById("settingsModal").classList.remove("hidden");
+        }
+
+        function closeSettingsModal() {
+            document.getElementById("settingsModal").classList.add("hidden");
+        }
+
+        function saveSettings(e) {
+            e.preventDefault();
+            const config = {
+                min_volume: parseFloat(document.getElementById("inputMinVol").value),
+                max_price: parseFloat(document.getElementById("inputMaxPrice").value),
+                ema_span: parseInt(document.getElementById("inputEmaSpan").value),
+                interval_seconds: parseInt(document.getElementById("inputInterval").value),
+                use_closed_candle: document.getElementById("inputClosedCandle").checked
+            };
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: "update_config", config }));
+            } else {
+                fetch("/api/config", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(config)
+                });
+            }
+
+            closeSettingsModal();
+            showToast("Configuration saved! Rescanning with new rules...", "fa-solid fa-sliders");
+        }
+
+        // Start everything on page load
+        window.addEventListener("DOMContentLoaded", () => {
+            initWebSocket();
+        });
+    </script>
+</body>
+</html>
